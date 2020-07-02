@@ -1,0 +1,10 @@
+- hosts: localhost
+  gather_facts: no
+  vars:
+    state: "present"
+  tasks:
+  - import_role:
+      name: "opendatahub"
+  - import_role:
+      name: "aicoe-jupyterhub"
+    when: odh_spec['aicoe-jupyterhub'] is defined and odh_spec['aicoe-jupyterhub']['odh_deploy']
