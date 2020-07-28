@@ -1,0 +1,7 @@
+apiVersion: jupyter.example.com/v1alpha1
+kind: JupyterLab
+metadata:
+  name: example-jupyterlab
+spec:
+  # Add fields here
+  size: 1

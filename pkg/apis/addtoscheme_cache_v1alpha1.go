@@ -1,7 +1,7 @@
 package apis
 
 import (
-	"github.com/atef23/jupyter-lab-operator/pkg/apis/cache/v1alpha1"
+	"github.com/atef23/jupyter-lab-operator/pkg/apis/jupyter/v1alpha1"
 )
 
 func init() {

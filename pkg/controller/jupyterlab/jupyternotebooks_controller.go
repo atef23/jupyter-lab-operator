@@ -3,7 +3,7 @@ package jupyterlab
 import (
 	"context"
 	"reflect"
-	cachev1alpha1 "github.com/atef23/jupyter-lab-operator/pkg/apis/cache/v1alpha1"
+	jupyterv1alpha1 "github.com/atef23/jupyter-lab-operator/pkg/apis/jupyter/v1alpha1"
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/errors"
@@ -21,7 +21,6 @@ import (
 
 	// route imports
 	routev1 "github.com/openshift/api/route/v1"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	"github.com/atef23/jupyter-lab-operator/pkg/controller/ocp"
 	"fmt"
 )
@@ -58,7 +57,7 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 	}
 
 	// Watch for changes to primary resource JupyterLab
-	err = c.Watch(&source.Kind{Type: &cachev1alpha1.JupyterLab{}}, &handler.EnqueueRequestForObject{})
+	err = c.Watch(&source.Kind{Type: &jupyterv1alpha1.JupyterLab{}}, &handler.EnqueueRequestForObject{})
 	if err != nil {
 		return err
 	}
@@ -67,7 +66,7 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 	// Watch for changes to secondary resource Pods and requeue the owner JupyterLab
 	err = c.Watch(&source.Kind{Type: &appsv1.Deployment{}}, &handler.EnqueueRequestForOwner{
 		IsController: true,
-		OwnerType:    &cachev1alpha1.JupyterLab{},
+		OwnerType:    &jupyterv1alpha1.JupyterLab{},
 	})
 	if err != nil {
 		return err
@@ -76,7 +75,7 @@ func add(mgr manager.Manager, r reconcile.Reconciler) error {
 	// watch for Route only on OpenShift
 	if err = c.Watch(&source.Kind{Type: &routev1.Route{}}, &handler.EnqueueRequestForOwner{
 		IsController: true,
-		OwnerType:    &cachev1alpha1.JupyterLab{},
+		OwnerType:    &jupyterv1alpha1.JupyterLab{},
 	}); err != nil {
 		return err
 	}
@@ -91,7 +90,7 @@ var _ reconcile.Reconciler = &ReconcileJupyterLab{}
 type ReconcileJupyterLab struct {
 	// TODO: Clarify the split client
 	// This client, initialized using mgr.Client() above, is a split client
-	// that reads objects from the cache and writes to the apiserver
+	// that reads objects from the jupyter and writes to the apiserver
 	client client.Client
 	scheme *runtime.Scheme
 }
@@ -108,7 +107,7 @@ func (r *ReconcileJupyterLab) Reconcile(request reconcile.Request) (reconcile.Re
 	reqLogger.Info("Reconciling JupyterLab")
 
 	// Fetch the JupyterLab instance
-	jupyterLab := &cachev1alpha1.JupyterLab{}
+	jupyterLab := &jupyterv1alpha1.JupyterLab{}
 	err := r.client.Get(context.TODO(), request.NamespacedName, jupyterLab)
 	if err != nil {
 		if errors.IsNotFound(err) {
@@ -128,13 +127,6 @@ func (r *ReconcileJupyterLab) Reconcile(request reconcile.Request) (reconcile.Re
 	err = r.client.Get(context.TODO(), types.NamespacedName{Name: jupyterLab.Name, Namespace: jupyterLab.Namespace}, found)
 	if err != nil && errors.IsNotFound(err) {
 
-
-
-
-
-
-
-
 		// Define a new service
 		service := r.serviceForJupyterLab(jupyterLab)
 		reqLogger.Info("Creating a new Service", "Service.Namespace", service.Namespace, "Service.Name", service.Name)
@@ -144,44 +136,14 @@ func (r *ReconcileJupyterLab) Reconcile(request reconcile.Request) (reconcile.Re
 			return reconcile.Result{}, err
 		}
 
-
-
-
-
-
-
-
-
-		route := &routev1.Route{
-			TypeMeta: metav1.TypeMeta{
-				APIVersion: "route.openshift.io/v1",
-				Kind:       "Route",
-			},	
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      jupyterLab.Name,
-				Namespace: jupyterLab.Namespace,
-			},
-			Spec: routev1.RouteSpec{
-				To: routev1.RouteTargetReference{
-					Kind: "Service",
-					Name: jupyterLab.Name,
-				},
-				Port: &routev1.RoutePort{
-					TargetPort: intstr.FromInt(8888),
-				},
-			},
-		}
-
+		// define a new route
+		route := ocp.NewRoute(jupyterLab.Name, jupyterLab.Namespace, fmt.Sprintf("%s-server", jupyterLab.Name), 8888);
 		reqLogger.Info("Creating a new Route", "Route.Namespace", route.Namespace, "Route.Name", route.Name)
-
 		controllerutil.SetControllerReference(jupyterLab, route, r.scheme)
 		if err := r.client.Create(context.TODO(), route); err != nil {
 			reqLogger.Error(err, "Failed to create new Route", "Route.Namespace", route.Namespace, "Route.Name", route.Name)
 			return reconcile.Result{}, err
 		}
-
-
-
 
 		// Define a new deployment
 		dep := r.deploymentForJupyterLab(jupyterLab)
@@ -197,37 +159,6 @@ func (r *ReconcileJupyterLab) Reconcile(request reconcile.Request) (reconcile.Re
 		reqLogger.Error(err, "Failed to get Deployment")
 		return reconcile.Result{}, err
 	}
-
-
-
-
-		// define a new route
-		/*
-		route := &routev1.Route{
-			TypeMeta: metav1.TypeMeta{
-				APIVersion: "route.openshift.io/v1",
-				Kind:       "Route",
-			},	
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      jupyterLab.Name,
-				Namespace: jupyterLab.Namespace,
-			},
-			Spec: routev1.RouteSpec{
-				TLS: &routev1.TLSConfig{
-					InsecureEdgeTerminationPolicy: routev1.InsecureEdgeTerminationPolicyRedirect,
-					Termination:                   routev1.TLSTerminationEdge,
-				},
-				To: routev1.RouteTargetReference{
-					Kind: "Service",
-					Name: jupyterLab.Name,
-				},
-				Port: &routev1.RoutePort{
-					TargetPort: intstr.FromInt(8888),
-				},
-			},
-		}
-		*/
-
 
 
 	// Ensure the deployment size is the same as the spec
@@ -270,7 +201,7 @@ func (r *ReconcileJupyterLab) Reconcile(request reconcile.Request) (reconcile.Re
 }
 
 // deploymentForJupyterLab returns a jupyterLab Deployment object
-func (r *ReconcileJupyterLab) deploymentForJupyterLab(m *cachev1alpha1.JupyterLab) *appsv1.Deployment {
+func (r *ReconcileJupyterLab) deploymentForJupyterLab(m *jupyterv1alpha1.JupyterLab) *appsv1.Deployment {
 	ls := labelsForJupyterLab(m.Name)
 	replicas := m.Spec.Size
 
@@ -332,17 +263,8 @@ func getPodNames(pods []corev1.Pod) []string {
 	return podNames
 }
 
-
-
-
-
-
-
-
-
-
 // serviceForJupyterLab returns a jupyterLab Service object
-func (r *ReconcileJupyterLab) serviceForJupyterLab(m *cachev1alpha1.JupyterLab) *corev1.Service {
+func (r *ReconcileJupyterLab) serviceForJupyterLab(m *jupyterv1alpha1.JupyterLab) *corev1.Service {
 	selectors := selectorsForService(m.Name)
 
 	service := &corev1.Service{
@@ -360,21 +282,4 @@ func (r *ReconcileJupyterLab) serviceForJupyterLab(m *cachev1alpha1.JupyterLab) 
 	// Set JupyterLab instance as the owner and controller
 	controllerutil.SetControllerReference(m, service, r.scheme)
 	return service
-}
-
-
-
-
-
-
-
-
-
-func (r *ReconcileJupyterLab) CreateRoute(m *cachev1alpha1.JupyterLab) *routev1.Route {
-
-	route := ocp.NewRoute(m.Name, m.Namespace, fmt.Sprintf("%s-server", m.Name), 8888)
-
-	// Set JupyterLab instance as the owner and controller
-	controllerutil.SetControllerReference(m, route, r.scheme)
-	return route
 }
